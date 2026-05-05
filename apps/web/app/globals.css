@@ -1,0 +1,16 @@
+body {
+  font-family: Inter, Arial, sans-serif;
+  background: #f8fafc;
+}
+
+.metric-card {
+  min-height: 112px;
+}
+
+.dashboard-shell {
+  min-height: 100vh;
+}
+
+.chip-badge {
+  text-transform: capitalize;
+}

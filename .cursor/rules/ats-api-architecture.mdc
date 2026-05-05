@@ -1,0 +1,33 @@
+---
+description: ATS API architecture and backend conventions
+globs: apps/api/**/*
+alwaysApply: false
+---
+
+# ATS API Architecture
+
+- Use layers strictly: `route -> controller -> service -> repository`.
+- Keep controllers thin; all business logic belongs in services.
+- Never access Mongoose models directly in controllers.
+- Use DTOs for request/response shapes from `packages/common`.
+
+# Error and Logging
+
+- Throw typed errors (`ValidationError`, `NotFoundError`, `AuthError`) only.
+- Map errors in one centralized Express error middleware.
+- Log with structured metadata (tenantId, userId, requestId), never plain strings only.
+- Do not log secrets, tokens, resumes, or full PII payloads.
+
+# ATS Domain Rules
+
+- Enforce tenant isolation in every repository query.
+- Track audit events for candidate stage transitions and interview feedback updates.
+- Use idempotency for webhook and resume parsing callbacks.
+
+# Example
+
+```ts
+// controller: pass validated input to service
+const candidate = await candidateService.create(req.context.tenantId, req.body);
+res.status(201).json(ApiResponse.success(candidate));
+```

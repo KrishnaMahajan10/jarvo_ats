@@ -1,0 +1,14 @@
+{
+  "name": "jarvo-ats",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev -w @jarvo/web",
+    "dev:api": "npm run dev -w @jarvo/api",
+    "build": "npm run build -w @jarvo/web && npm run build -w @jarvo/api"
+  }
+}

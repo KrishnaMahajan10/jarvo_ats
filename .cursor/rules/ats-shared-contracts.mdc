@@ -1,0 +1,35 @@
+---
+description: Shared contracts, typing, and validation standards
+globs: packages/common/**/*
+alwaysApply: false
+---
+
+# Shared Contracts Rules
+
+- Keep API contracts, DTOs, enums, and validation schemas in `packages/common`.
+- Avoid duplicating types between frontend and backend.
+- All cross-app payloads must have runtime validation and static typing.
+- Prefer explicit domain names (`CandidateStage`, `InterviewRound`) over generic labels.
+
+# Compatibility and Versioning
+
+- Changes to response DTOs must remain backward compatible for active clients.
+- Add fields as optional first; remove only after migration and usage cleanup.
+- Export contracts through stable index files to prevent deep import drift.
+
+# Validation Expectations
+
+- Validate inbound payloads on API boundary and parse safely.
+- Return user-safe validation errors; do not leak internal schema details.
+- Keep date and status formats normalized (ISO date, enum-based statuses).
+
+# Example
+
+```ts
+export type CandidateSummaryDto = {
+  id: string;
+  fullName: string;
+  stage: CandidateStage;
+  updatedAt: string;
+};
+```

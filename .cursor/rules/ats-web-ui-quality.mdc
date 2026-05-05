@@ -1,0 +1,34 @@
+---
+description: ATS frontend UI and responsive quality standards
+globs: apps/web/**/*
+alwaysApply: false
+---
+
+# ATS Web UI Standards
+
+- Build mobile-first layouts, then scale for tablet and desktop breakpoints.
+- Use reusable UI primitives and consistent spacing/type tokens.
+- Keep pages composition-focused; move logic into hooks and services.
+- Prefer server components; use client components only where interactivity is needed.
+
+# Professional UX Baseline
+
+- Every main screen must include loading, empty, error, and success states.
+- Use accessible labels, keyboard navigation, and WCAG-compliant contrast.
+- Keep tables performant with pagination, filtering, and debounced search.
+- Candidate pipeline drag/drop must support keyboard fallback actions.
+
+# Visual Consistency
+
+- Use one design language: card sections, sticky page actions, clear hierarchy.
+- Keep micro-interactions subtle (hover/focus/active), avoid noisy animations.
+- Use avatar/status chips/tags consistently across candidate, job, and interview views.
+
+# Example
+
+```tsx
+<PageShell title="Candidates" subtitle="Track pipeline across all jobs">
+  <CandidateFilters />
+  <CandidateTable />
+</PageShell>
+```
