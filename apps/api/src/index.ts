@@ -40,7 +40,8 @@ const CandidateModel = mongoose.model(
       stage: String,
       skills: [String],
       atsScore: Number,
-      scoreBreakdown: { keyword: Number, skill: Number, structure: Number },
+      scoreBreakdown: { required: Number, optional: Number, experience: Number, structure: Number },
+      scoreSummary: String,
       resumeSummary: String
     },
     { timestamps: true }
@@ -74,20 +75,45 @@ function normalizeWords(text: string): string[] {
 function computeAtsScore(resumeText: string, jdText: string) {
   const resumeWords = new Set(normalizeWords(resumeText));
   const jdWords = Array.from(new Set(normalizeWords(jdText)));
-  const matched = jdWords.filter((word) => resumeWords.has(word));
-  const keywordScore = jdWords.length ? Math.round((matched.length / jdWords.length) * 70) : 0;
+  const requiredKeywords = [
+    "react",
+    "next",
+    "node",
+    "express",
+    "mongodb",
+    "typescript",
+    "javascript",
+    "rest",
+    "api"
+  ];
+  const optionalKeywords = ["azure", "docker", "kubernetes", "redis", "graphql", "testing", "jest", "ci"];
+  const requiredInJd = requiredKeywords.filter((word) => jdWords.includes(word));
+  const optionalInJd = optionalKeywords.filter((word) => jdWords.includes(word));
+  const matchedRequired = requiredInJd.filter((word) => resumeWords.has(word));
+  const matchedOptional = optionalInJd.filter((word) => resumeWords.has(word));
+  const requiredScore = requiredInJd.length ? Math.round((matchedRequired.length / requiredInJd.length) * 55) : 30;
+  const optionalScore = optionalInJd.length ? Math.round((matchedOptional.length / optionalInJd.length) * 20) : 10;
+  const experienceMatch = resumeText.match(/(\d+)\+?\s*(years|yrs|year)/i);
+  const years = experienceMatch ? Number(experienceMatch[1]) : 0;
+  const experienceScore = years >= 3 ? 15 : years >= 1 ? 10 : 4;
   const skillKeywords = ["react", "next", "node", "express", "mongodb", "typescript", "javascript"];
   const matchedSkills = skillKeywords.filter((skill) => resumeWords.has(skill));
-  const skillScore = Math.min(20, matchedSkills.length * 3);
-  const structureScore = resumeText.length > 500 ? 10 : 5;
-  const total = Math.min(100, keywordScore + skillScore + structureScore);
+  const structureScore = resumeText.length > 700 ? 10 : resumeText.length > 400 ? 7 : 4;
+  const total = Math.min(100, requiredScore + optionalScore + experienceScore + structureScore);
+  const missingRequired = requiredInJd.filter((word) => !resumeWords.has(word));
+  const summary =
+    missingRequired.length === 0
+      ? "Strong fit with required stack alignment."
+      : `Needs improvement in: ${missingRequired.slice(0, 4).join(", ")}.`;
 
   return {
     total,
     skills: matchedSkills,
+    summary,
     breakdown: {
-      keyword: keywordScore,
-      skill: skillScore,
+      required: requiredScore,
+      optional: optionalScore,
+      experience: experienceScore,
       structure: structureScore
     }
   };
@@ -146,6 +172,12 @@ app.get("/candidates", authMiddleware, async (req: AuthedRequest, res) => {
   res.json(candidates);
 });
 
+app.get("/candidates/:id", authMiddleware, async (req: AuthedRequest, res) => {
+  const candidate = await CandidateModel.findOne({ _id: req.params.id, tenantId: req.user!.tenantId }).lean();
+  if (!candidate) return res.status(404).json({ message: "Candidate not found" });
+  return res.json(candidate);
+});
+
 app.post(
   "/candidates/upload-resume",
   authMiddleware,
@@ -177,6 +209,7 @@ app.post(
       skills: ats.skills,
       atsScore: ats.total,
       scoreBreakdown: ats.breakdown,
+      scoreSummary: ats.summary,
       resumeSummary
     });
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 
 type Job = {
   _id: string;
@@ -19,6 +20,8 @@ type Candidate = {
   phone?: string;
   skills?: string[];
   atsScore?: number;
+  scoreSummary?: string;
+  scoreBreakdown?: { required: number; optional: number; experience: number; structure: number };
 };
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000";
@@ -58,6 +61,19 @@ export default function HomePage() {
     });
   }, [candidates, searchText, stageFilter]);
 
+  const stageBoard = useMemo(() => {
+    const order = ["applied", "screening", "interview", "offer", "hired", "rejected"];
+    return order.map((stage) => ({
+      stage,
+      candidates: candidates.filter((candidate) => candidate.stage === stage).slice(0, 4)
+    }));
+  }, [candidates]);
+
+  useEffect(() => {
+    const savedToken = typeof window !== "undefined" ? localStorage.getItem("jarvo_token") : null;
+    if (savedToken) setToken(savedToken);
+  }, []);
+
   async function loginAsRecruiter() {
     const response = await fetch(`${API_BASE_URL}/auth/mock-login`, {
       method: "POST",
@@ -66,6 +82,7 @@ export default function HomePage() {
     });
     const data = await response.json();
     setToken(data.token);
+    localStorage.setItem("jarvo_token", data.token);
     setMessage("Logged in as recruiter.");
   }
 
@@ -219,6 +236,38 @@ export default function HomePage() {
           </div>
         </div>
 
+        <div className="card shadow-sm mb-4">
+          <div className="card-body">
+            <h2 className="h5 mb-3">Pipeline Board</h2>
+            <div className="row g-3">
+              {stageBoard.map((column) => (
+                <div className="col-6 col-md-4 col-xl-2" key={column.stage}>
+                  <div className="border rounded p-2 h-100 bg-light-subtle">
+                    <div className="d-flex justify-content-between align-items-center mb-2">
+                      <span className="text-capitalize fw-semibold">{column.stage}</span>
+                      <span className="badge text-bg-secondary">{column.candidates.length}</span>
+                    </div>
+                    {column.candidates.length === 0 ? (
+                      <p className="text-secondary small mb-0">No candidates</p>
+                    ) : (
+                      column.candidates.map((candidate) => (
+                        <Link
+                          key={candidate._id}
+                          href={`/candidates/${candidate._id}`}
+                          className="d-block text-decoration-none border rounded p-2 mb-2 bg-white"
+                        >
+                          <p className="mb-1 text-dark fw-medium">{candidate.fullName}</p>
+                          <p className="mb-0 small text-secondary">ATS {candidate.atsScore ?? "--"}</p>
+                        </Link>
+                      ))
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
         <div className="row g-4">
           <div className="col-12 col-xxl-2">
             <div className="card shadow-sm">
@@ -329,7 +378,11 @@ export default function HomePage() {
                       ) : (
                         filteredCandidates.map((candidate) => (
                           <tr key={candidate._id}>
-                            <td>{candidate.fullName}</td>
+                            <td>
+                              <Link href={`/candidates/${candidate._id}`} className="text-decoration-none fw-semibold">
+                                {candidate.fullName}
+                              </Link>
+                            </td>
                             <td>{candidate.email}</td>
                             <td>
                               <span className="badge text-bg-light border chip-badge">{candidate.stage}</span>

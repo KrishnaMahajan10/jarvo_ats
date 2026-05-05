@@ -1,6 +1,7 @@
 import "./globals.css";
 import "bootstrap/dist/css/bootstrap.css";
 import { ReactNode } from "react";
+import ServiceWorkerCleanup from "./sw-cleanup";
 
 export const metadata = {
   title: "Jarvo ATS",
@@ -10,7 +11,10 @@ export const metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <ServiceWorkerCleanup />
+        {children}
+      </body>
     </html>
   );
 }
