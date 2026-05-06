@@ -30,3 +30,16 @@ export const createJobSchema = z.object({
 export type CreateJobDto = z.infer<typeof createJobSchema>;
 
 export type UserRole = "owner" | "admin" | "recruiter" | "viewer";
+
+export const interviewStatusSchema = z.enum(["scheduled", "completed", "cancelled"]);
+
+export const createInterviewSchema = z.object({
+  candidateId: z.string().min(1),
+  roundName: z.string().min(2),
+  interviewerName: z.string().min(2),
+  interviewAt: z.string().datetime(),
+  status: interviewStatusSchema.default("scheduled"),
+  feedback: z.string().optional()
+});
+
+export type CreateInterviewDto = z.infer<typeof createInterviewSchema>;

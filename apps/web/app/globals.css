@@ -1,10 +1,14 @@
 body {
   font-family: Inter, Arial, sans-serif;
-  background: #f8fafc;
+  background: radial-gradient(circle at top, #10172a, #0b1020 45%, #060a14);
+  color: #e2e8f0;
 }
 
 .metric-card {
   min-height: 112px;
+  border: 1px solid #1f2a44;
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(2, 6, 23, 0.45);
 }
 
 .dashboard-shell {
@@ -13,4 +17,82 @@ body {
 
 .chip-badge {
   text-transform: capitalize;
+}
+
+.app-shell {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.surface-card {
+  border: 1px solid #1f2a44;
+  border-radius: 16px;
+  box-shadow: 0 10px 25px rgba(2, 6, 23, 0.45);
+}
+
+.section-title {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #f8fafc;
+}
+
+.muted {
+  color: #94a3b8;
+}
+
+.table thead th {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.btn-light {
+  background: #0f172a;
+  border-color: #334155;
+  color: #e2e8f0;
+}
+
+.btn-light:hover {
+  background: #1e293b;
+  border-color: #475569;
+  color: #f8fafc;
+}
+
+.card,
+.surface-card,
+.metric-card {
+  background: linear-gradient(180deg, #0f172a, #0b1324);
+}
+
+.form-control,
+.form-select,
+.list-group-item,
+.table,
+.table > :not(caption) > * > * {
+  background-color: #0b1220;
+  color: #e2e8f0;
+  border-color: #26324d;
+}
+
+.form-control::placeholder {
+  color: #64748b;
+}
+
+.list-group-item {
+  border-color: #26324d;
+}
+
+.alert-info {
+  background: rgba(30, 64, 175, 0.2);
+  border-color: rgba(59, 130, 246, 0.4);
+  color: #dbeafe;
+}
+
+a {
+  color: #93c5fd;
+}
+
+a:hover {
+  color: #bfdbfe;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 type CandidateDetail = {
@@ -19,13 +20,14 @@ type CandidateDetail = {
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000";
 
 export default function CandidateDetailPage({ params }: { params: { id: string } }) {
+  const router = useRouter();
   const [candidate, setCandidate] = useState<CandidateDetail | null>(null);
   const [message, setMessage] = useState("Loading candidate profile...");
 
   useEffect(() => {
     const token = localStorage.getItem("jarvo_token");
     if (!token) {
-      setMessage("Please login from dashboard first.");
+      router.replace("/login");
       return;
     }
 
@@ -44,7 +46,7 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
         setMessage("");
       })
       .catch((error: Error) => setMessage(error.message));
-  }, [params.id]);
+  }, [params.id, router]);
 
   if (!candidate) {
     return (

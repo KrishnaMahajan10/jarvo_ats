@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 type Job = {
   _id: string;
@@ -24,12 +25,24 @@ type Candidate = {
   scoreBreakdown?: { required: number; optional: number; experience: number; structure: number };
 };
 
+type Interview = {
+  _id: string;
+  candidateId: string;
+  roundName: string;
+  interviewerName: string;
+  interviewAt: string;
+  status: string;
+};
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000";
 
 export default function HomePage() {
+  const router = useRouter();
   const [token, setToken] = useState<string>("");
+  const [authReady, setAuthReady] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [interviews, setInterviews] = useState<Interview[]>([]);
   const [message, setMessage] = useState<string>("");
   const [searchText, setSearchText] = useState<string>("");
   const [stageFilter, setStageFilter] = useState<string>("all");
@@ -43,6 +56,12 @@ export default function HomePage() {
   });
   const [resumeJobId, setResumeJobId] = useState<string>("");
   const [resumeFile, setResumeFile] = useState<File | null>(null);
+  const [interviewForm, setInterviewForm] = useState({
+    candidateId: "",
+    roundName: "",
+    interviewerName: "",
+    interviewAt: ""
+  });
 
   const roleStats = useMemo(() => {
     const applied = candidates.filter((candidate) => candidate.stage === "applied").length;
@@ -71,35 +90,45 @@ export default function HomePage() {
 
   useEffect(() => {
     const savedToken = typeof window !== "undefined" ? localStorage.getItem("jarvo_token") : null;
-    if (savedToken) setToken(savedToken);
-  }, []);
-
-  async function loginAsRecruiter() {
-    const response = await fetch(`${API_BASE_URL}/auth/mock-login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ role: "recruiter", tenantId: "demo-tenant" })
-    });
-    const data = await response.json();
-    setToken(data.token);
-    localStorage.setItem("jarvo_token", data.token);
-    setMessage("Logged in as recruiter.");
-  }
+    if (!savedToken) {
+      router.replace("/login");
+      setAuthReady(true);
+      return;
+    }
+    setToken(savedToken);
+    setAuthReady(true);
+  }, [router]);
 
   async function fetchData(authToken: string) {
     const headers = { Authorization: `Bearer ${authToken}` };
-    const [jobsResponse, candidatesResponse] = await Promise.all([
+    const [jobsResponse, candidatesResponse, interviewsResponse] = await Promise.all([
       fetch(`${API_BASE_URL}/jobs`, { headers }),
-      fetch(`${API_BASE_URL}/candidates`, { headers })
+      fetch(`${API_BASE_URL}/candidates`, { headers }),
+      fetch(`${API_BASE_URL}/interviews`, { headers })
     ]);
     setJobs(await jobsResponse.json());
     setCandidates(await candidatesResponse.json());
+    setInterviews(await interviewsResponse.json());
   }
 
   useEffect(() => {
     if (!token) return;
     fetchData(token).catch(() => setMessage("Could not fetch data from API."));
   }, [token]);
+
+  function logout() {
+    localStorage.removeItem("jarvo_token");
+    setToken("");
+    router.replace("/login");
+  }
+
+  if (!authReady || !token) {
+    return (
+      <main className="container py-4">
+        <div className="alert alert-info mb-0">Redirecting to login...</div>
+      </main>
+    );
+  }
 
   async function createJob(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -168,7 +197,7 @@ export default function HomePage() {
   async function uploadResumeForScoring(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!token) return setMessage("Login first.");
-    if (!resumeJobId || !resumeFile) return setMessage("Select job and PDF resume.");
+    if (!resumeJobId || !resumeFile) return setMessage("Select job and resume file (PDF/DOC/DOCX).");
 
     const formData = new FormData();
     formData.append("jobId", resumeJobId);
@@ -186,6 +215,31 @@ export default function HomePage() {
     setMessage("Resume parsed and ATS profile created.");
   }
 
+  async function scheduleInterview(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token) return setMessage("Login first.");
+    if (
+      !interviewForm.candidateId ||
+      !interviewForm.roundName.trim() ||
+      !interviewForm.interviewerName.trim() ||
+      !interviewForm.interviewAt
+    ) {
+      return setMessage("Fill candidate, round, interviewer, and interview date/time.");
+    }
+    const response = await fetch(`${API_BASE_URL}/interviews`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        ...interviewForm,
+        interviewAt: new Date(interviewForm.interviewAt).toISOString()
+      })
+    });
+    if (!response.ok) return setMessage("Failed to schedule interview.");
+    setInterviewForm({ candidateId: "", roundName: "", interviewerName: "", interviewAt: "" });
+    await fetchData(token);
+    setMessage("Interview scheduled.");
+  }
+
   return (
     <main className="dashboard-shell py-4">
       <div className="container-fluid">
@@ -194,8 +248,8 @@ export default function HomePage() {
             <h1 className="h2 mb-1">Jarvo ATS</h1>
             <p className="text-secondary mb-0">Bootstrap dashboard connected to Express + MongoDB.</p>
           </div>
-          <button className="btn btn-primary" onClick={loginAsRecruiter} type="button">
-            Login (Recruiter)
+          <button className="btn btn-outline-danger" onClick={logout} type="button">
+            Logout
           </button>
         </div>
 
@@ -483,7 +537,7 @@ export default function HomePage() {
 
             <div className="card shadow-sm mt-4">
               <div className="card-body">
-                <h2 className="h5 mb-3">Upload Resume (PDF) + ATS Score</h2>
+                <h2 className="h5 mb-3">Upload Resume (PDF/DOC/DOCX) + ATS Score</h2>
                 <form className="row g-2" onSubmit={uploadResumeForScoring}>
                   <div className="col-12">
                     <select
@@ -502,11 +556,20 @@ export default function HomePage() {
                     </select>
                   </div>
                   <div className="col-12">
+                    <div className="d-flex flex-wrap gap-2">
+                      {jobs.map((job) => (
+                        <Link key={job._id} href={`/jobs/${job._id}`} className="badge text-bg-light border text-decoration-none">
+                          View {job.title}
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="col-12">
                     <input
                       className="form-control"
                       type="file"
-                      accept="application/pdf"
-                      aria-label="Upload candidate resume PDF"
+                      accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      aria-label="Upload candidate resume file"
                       onChange={(event) => setResumeFile(event.target.files?.[0] || null)}
                       required
                     />
@@ -537,6 +600,82 @@ export default function HomePage() {
                     <strong>{roleStats.offer}</strong>
                   </li>
                 </ul>
+              </div>
+            </div>
+
+            <div className="card shadow-sm mt-4">
+              <div className="card-body">
+                <h2 className="h5 mb-3">Schedule Interview</h2>
+                <form className="row g-2" onSubmit={scheduleInterview}>
+                  <div className="col-12">
+                    <select
+                      className="form-select"
+                      aria-label="Select candidate for interview"
+                      value={interviewForm.candidateId}
+                      onChange={(event) => setInterviewForm((prev) => ({ ...prev, candidateId: event.target.value }))}
+                    >
+                      <option value="">Select candidate</option>
+                      {candidates.map((candidate) => (
+                        <option key={candidate._id} value={candidate._id}>
+                          {candidate.fullName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="col-6">
+                    <input
+                      className="form-control"
+                      placeholder="Round name (e.g. Technical 1)"
+                      value={interviewForm.roundName}
+                      onChange={(event) => setInterviewForm((prev) => ({ ...prev, roundName: event.target.value }))}
+                    />
+                  </div>
+                  <div className="col-6">
+                    <input
+                      className="form-control"
+                      placeholder="Interviewer"
+                      value={interviewForm.interviewerName}
+                      onChange={(event) =>
+                        setInterviewForm((prev) => ({ ...prev, interviewerName: event.target.value }))
+                      }
+                    />
+                  </div>
+                  <div className="col-12">
+                    <input
+                      className="form-control"
+                      type="datetime-local"
+                      aria-label="Select interview date and time"
+                      value={interviewForm.interviewAt}
+                      onChange={(event) => setInterviewForm((prev) => ({ ...prev, interviewAt: event.target.value }))}
+                    />
+                  </div>
+                  <div className="col-12">
+                    <button className="btn btn-outline-dark" type="submit">
+                      Schedule
+                    </button>
+                  </div>
+                </form>
+
+                <div className="mt-3">
+                  <h3 className="h6">Upcoming Interviews</h3>
+                  {interviews.length === 0 ? (
+                    <p className="text-secondary mb-0">No interviews scheduled yet.</p>
+                  ) : (
+                    <ul className="list-group">
+                      {interviews.slice(0, 5).map((item) => (
+                        <li key={item._id} className="list-group-item d-flex justify-content-between align-items-start">
+                          <div>
+                            <p className="mb-1 fw-semibold">{item.roundName}</p>
+                            <p className="mb-0 text-secondary small">{item.interviewerName}</p>
+                          </div>
+                          <span className="small text-secondary">
+                            {new Date(item.interviewAt).toLocaleString()}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
             </div>
           </div>

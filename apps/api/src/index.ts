@@ -2,17 +2,35 @@ import cors from "cors";
 import dotenv from "dotenv";
 import express, { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
+import mammoth from "mammoth";
 import mongoose, { Schema } from "mongoose";
 import multer from "multer";
 import pdfParse from "pdf-parse";
-import { candidateStageSchema, createCandidateSchema, createJobSchema, UserRole } from "@jarvo/common/src";
+import {
+  candidateStageSchema,
+  createCandidateSchema,
+  createInterviewSchema,
+  createJobSchema,
+  UserRole
+} from "@jarvo/common/src";
 
 dotenv.config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (_req, file, callback) => {
+    const lower = file.originalname.toLowerCase();
+    const isAllowed = lower.endsWith(".pdf") || lower.endsWith(".docx") || lower.endsWith(".doc");
+    if (!isAllowed) {
+      callback(new Error("Only PDF, DOC, and DOCX files are allowed."));
+      return;
+    }
+    callback(null, true);
+  }
+});
 
 const mongoUrl = process.env.MONGO_URL || "mongodb://127.0.0.1:27017/jarvo_ats";
 const jwtSecret = process.env.JWT_SECRET || "dev-secret";
@@ -43,6 +61,22 @@ const CandidateModel = mongoose.model(
       scoreBreakdown: { required: Number, optional: Number, experience: Number, structure: Number },
       scoreSummary: String,
       resumeSummary: String
+    },
+    { timestamps: true }
+  )
+);
+
+const InterviewModel = mongoose.model(
+  "Interview",
+  new Schema(
+    {
+      tenantId: String,
+      candidateId: String,
+      roundName: String,
+      interviewerName: String,
+      interviewAt: String,
+      status: String,
+      feedback: String
     },
     { timestamps: true }
   )
@@ -119,6 +153,27 @@ function computeAtsScore(resumeText: string, jdText: string) {
   };
 }
 
+async function extractResumeText(file: Express.Multer.File): Promise<string> {
+  const lower = file.originalname.toLowerCase();
+
+  if (lower.endsWith(".pdf")) {
+    const parsed = await pdfParse(file.buffer);
+    return parsed.text || "";
+  }
+
+  if (lower.endsWith(".docx")) {
+    const parsed = await mammoth.extractRawText({ buffer: file.buffer });
+    return parsed.value || "";
+  }
+
+  if (lower.endsWith(".doc")) {
+    // Basic fallback for legacy .doc files if plain text is embedded.
+    return file.buffer.toString("utf8");
+  }
+
+  throw new Error("Unsupported resume format.");
+}
+
 const authMiddleware = (req: AuthedRequest, res: Response, next: NextFunction) => {
   const token = req.headers.authorization?.replace("Bearer ", "");
   if (!token) return res.status(401).json({ message: "Unauthorized" });
@@ -156,6 +211,15 @@ app.get("/jobs", authMiddleware, async (req: AuthedRequest, res) => {
   res.json(jobs);
 });
 
+app.get("/jobs/:id", authMiddleware, async (req: AuthedRequest, res) => {
+  const job = await JobModel.findOne({ _id: req.params.id, tenantId: req.user!.tenantId }).lean();
+  if (!job) return res.status(404).json({ message: "Job not found" });
+  const rankedCandidates = await CandidateModel.find({ tenantId: req.user!.tenantId, jobId: req.params.id })
+    .sort({ atsScore: -1, createdAt: -1 })
+    .lean();
+  return res.json({ job, rankedCandidates });
+});
+
 app.post(
   "/candidates",
   authMiddleware,
@@ -191,8 +255,7 @@ app.post(
     const job = await JobModel.findOne({ _id: jobId, tenantId: req.user!.tenantId }).lean();
     if (!job) return res.status(404).json({ message: "Job not found." });
 
-    const parsed = await pdfParse(req.file.buffer);
-    const resumeText = parsed.text || "";
+    const resumeText = await extractResumeText(req.file);
     const fullName = extractName(resumeText);
     const email = extractEmail(resumeText);
     const phone = extractPhone(resumeText);
@@ -233,6 +296,27 @@ app.patch(
     return res.json(candidate);
   }
 );
+
+app.post(
+  "/interviews",
+  authMiddleware,
+  roleGuard(["owner", "admin", "recruiter"]),
+  async (req: AuthedRequest, res) => {
+    const payload = createInterviewSchema.parse(req.body);
+    const candidate = await CandidateModel.findOne({
+      _id: payload.candidateId,
+      tenantId: req.user!.tenantId
+    }).lean();
+    if (!candidate) return res.status(404).json({ message: "Candidate not found." });
+    const interview = await InterviewModel.create({ ...payload, tenantId: req.user!.tenantId });
+    return res.status(201).json(interview);
+  }
+);
+
+app.get("/interviews", authMiddleware, async (req: AuthedRequest, res) => {
+  const interviews = await InterviewModel.find({ tenantId: req.user!.tenantId }).sort({ interviewAt: 1 }).lean();
+  return res.json(interviews);
+});
 
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   if (err instanceof Error) return res.status(400).json({ message: err.message });
