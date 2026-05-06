@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import AppNav from "../components/AppNav";
 
 type Candidate = {
@@ -15,6 +16,7 @@ type Candidate = {
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000";
 
 export default function CandidatesPage() {
+  const router = useRouter();
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [message, setMessage] = useState("");
 
@@ -26,8 +28,12 @@ export default function CandidatesPage() {
   }
 
   useEffect(() => {
+    if (!localStorage.getItem("jarvo_token")) {
+      router.replace("/login");
+      return;
+    }
     loadCandidates().catch(() => setMessage("Failed to load candidates."));
-  }, []);
+  }, [router]);
 
   async function updateStage(candidateId: string, stage: string) {
     const token = localStorage.getItem("jarvo_token");

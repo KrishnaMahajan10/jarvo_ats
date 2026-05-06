@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import AppNav from "../components/AppNav";
 
 type Candidate = { _id: string; fullName: string };
@@ -16,6 +17,7 @@ type Interview = {
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000";
 
 export default function InterviewsPage() {
+  const router = useRouter();
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [interviews, setInterviews] = useState<Interview[]>([]);
   const [message, setMessage] = useState("");
@@ -34,8 +36,12 @@ export default function InterviewsPage() {
   }
 
   useEffect(() => {
+    if (!localStorage.getItem("jarvo_token")) {
+      router.replace("/login");
+      return;
+    }
     loadData().catch(() => setMessage("Failed to load interviews."));
-  }, []);
+  }, [router]);
 
   async function schedule(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

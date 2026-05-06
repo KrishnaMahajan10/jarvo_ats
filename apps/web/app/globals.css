@@ -22,12 +22,19 @@ body {
 .app-shell {
   max-width: 1200px;
   margin: 0 auto;
+  padding-left: 12px;
+  padding-right: 12px;
 }
 
 .surface-card {
   border: 1px solid #1f2a44;
   border-radius: 16px;
   box-shadow: 0 10px 25px rgba(2, 6, 23, 0.45);
+  overflow: hidden;
+}
+
+.surface-card .card-body {
+  padding: 1.25rem;
 }
 
 .section-title {
@@ -73,6 +80,20 @@ body {
   background-color: #0b1220;
   color: #e2e8f0;
   border-color: #26324d;
+}
+
+.form-control,
+.form-select {
+  min-height: 42px;
+  border-radius: 10px;
+}
+
+textarea.form-control {
+  min-height: 120px;
+}
+
+.table > :not(caption) > * > * {
+  padding: 0.85rem 0.75rem;
 }
 
 .form-control::placeholder {

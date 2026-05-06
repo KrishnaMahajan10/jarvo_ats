@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import AppNav from "../components/AppNav";
 
 type Job = {
@@ -15,6 +16,7 @@ type Job = {
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000";
 
 export default function JobsPage() {
+  const router = useRouter();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [message, setMessage] = useState("");
   const [form, setForm] = useState({ title: "", department: "", location: "", jdText: "" });
@@ -30,8 +32,12 @@ export default function JobsPage() {
   }
 
   useEffect(() => {
+    if (!localStorage.getItem("jarvo_token")) {
+      router.replace("/login");
+      return;
+    }
     loadJobs().catch(() => setMessage("Failed to load jobs."));
-  }, []);
+  }, [router]);
 
   async function createJob(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
