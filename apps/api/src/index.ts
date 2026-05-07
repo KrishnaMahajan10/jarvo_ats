@@ -34,6 +34,8 @@ const upload = multer({
 
 const mongoUrl = process.env.MONGO_URL || "mongodb://127.0.0.1:27017/jarvo_ats";
 const jwtSecret = process.env.JWT_SECRET || "dev-secret";
+const grokApiKey = process.env.GROK_API_KEY || "";
+const grokModel = process.env.GROK_MODEL || "grok-3-mini";
 
 type RequestUser = { userId: string; role: UserRole; tenantId: string };
 type AuthedRequest = Request & { user?: RequestUser };
@@ -60,6 +62,15 @@ const CandidateModel = mongoose.model(
       atsScore: Number,
       scoreBreakdown: { required: Number, optional: Number, experience: Number, structure: Number },
       scoreSummary: String,
+      aiOverview: String,
+      matchedKeywords: [String],
+      missingKeywords: [String],
+      laggingAreas: [String],
+      improvementActions: [String],
+      resumeRewriteTips: [String],
+      aiUsed: Boolean,
+      aiSource: String,
+      aiFailureReason: String,
       resumeSummary: String
     },
     { timestamps: true }
@@ -106,7 +117,28 @@ function normalizeWords(text: string): string[] {
     .filter((word) => word.length > 2);
 }
 
-function computeAtsScore(resumeText: string, jdText: string) {
+type AtsScoreResult = {
+  total: number;
+  skills: string[];
+  summary: string;
+  breakdown: { required: number; optional: number; experience: number; structure: number };
+  matchedKeywords: string[];
+  missingKeywords: string[];
+};
+
+type AiOverviewResult = {
+  aiOverview: string;
+  matchedKeywords: string[];
+  missingKeywords: string[];
+  laggingAreas: string[];
+  improvementActions: string[];
+  resumeRewriteTips: string[];
+  aiUsed: boolean;
+  aiSource: "grok" | "fallback";
+  aiFailureReason?: string;
+};
+
+function computeAtsScore(resumeText: string, jdText: string): AtsScoreResult {
   const resumeWords = new Set(normalizeWords(resumeText));
   const jdWords = Array.from(new Set(normalizeWords(jdText)));
   const requiredKeywords = [
@@ -144,6 +176,8 @@ function computeAtsScore(resumeText: string, jdText: string) {
     total,
     skills: matchedSkills,
     summary,
+    matchedKeywords: [...matchedRequired, ...matchedOptional],
+    missingKeywords: missingRequired,
     breakdown: {
       required: requiredScore,
       optional: optionalScore,
@@ -151,6 +185,198 @@ function computeAtsScore(resumeText: string, jdText: string) {
       structure: structureScore
     }
   };
+}
+
+function chunkText(text: string, maxChunks = 8): string[] {
+  const trimmed = text.trim();
+  if (!trimmed) return [""];
+  const chunkSize = Math.max(1800, Math.ceil(trimmed.length / maxChunks));
+  const chunks: string[] = [];
+
+  for (let i = 0; i < trimmed.length; i += chunkSize) {
+    chunks.push(trimmed.slice(i, i + chunkSize));
+  }
+
+  return chunks;
+}
+
+function extractSkillSignals(text: string): string[] {
+  const normalized = ` ${text.toLowerCase()} `;
+  const catalog = [
+    "react",
+    "next.js",
+    "node.js",
+    "express",
+    "mongodb",
+    "typescript",
+    "javascript",
+    "rest api",
+    "graphql",
+    "docker",
+    "kubernetes",
+    "redis",
+    "postgresql",
+    "mysql",
+    "aws",
+    "azure",
+    "gcp",
+    "ci/cd",
+    "jest",
+    "playwright",
+    "cypress",
+    "python",
+    "java",
+    "go",
+    "microservices"
+  ];
+  return catalog.filter((skill) => normalized.includes(` ${skill.toLowerCase()} `));
+}
+
+async function callGrok(messages: Array<{ role: "system" | "user"; content: string }>): Promise<string> {
+  const response = await fetch("https://api.x.ai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${grokApiKey}`
+    },
+    body: JSON.stringify({
+      model: grokModel,
+      temperature: 0.2,
+      messages
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Grok request failed with status ${response.status}`);
+  }
+
+  const data = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const raw = data.choices?.[0]?.message?.content?.trim() || "";
+  if (!raw) {
+    throw new Error("Grok returned empty response.");
+  }
+  return raw;
+}
+
+async function generateGrokOverview(
+  resumeText: string,
+  jdText: string,
+  ruleScore: AtsScoreResult
+): Promise<AiOverviewResult> {
+  const fallback = (reason?: string): AiOverviewResult => ({
+    aiOverview: ruleScore.summary,
+    matchedKeywords: ruleScore.matchedKeywords,
+    missingKeywords: ruleScore.missingKeywords,
+    laggingAreas: ruleScore.missingKeywords.slice(0, 6),
+    improvementActions: [
+      "Add missing required skills in projects with measurable outcomes.",
+      "Tailor summary and experience bullets to match role keywords."
+    ],
+    resumeRewriteTips: [
+      "Use role-specific keywords naturally in skills, projects, and experience sections.",
+      "Quantify impact in each project bullet using metrics."
+    ],
+    aiUsed: false,
+    aiSource: "fallback",
+    aiFailureReason: reason
+  });
+
+  if (!grokApiKey) {
+    return fallback("GROK_API_KEY is missing.");
+  }
+
+  try {
+    const resumeChunks = chunkText(resumeText, 8);
+    const jdChunks = chunkText(jdText, 4);
+    const jdContext = jdChunks.join("\n\n--- JD CHUNK ---\n\n");
+    const extractedSkills = extractSkillSignals(resumeText);
+    const aggregated = {
+      matched: new Set<string>(),
+      missing: new Set<string>(),
+      lagging: new Set<string>(),
+      actions: new Set<string>(),
+      tips: new Set<string>()
+    };
+
+    for (let index = 0; index < resumeChunks.length; index += 1) {
+      const raw = await callGrok([
+        {
+          role: "system",
+          content:
+            "You are an ATS assistant. Return strict JSON only with keys: matchedKeywords (string[]), missingKeywords (string[]), laggingAreas (string[]), improvementActions (string[]), resumeRewriteTips (string[]). Keep each list concise."
+        },
+        {
+          role: "user",
+          content: `Analyze resume chunk ${index + 1}/${resumeChunks.length} against the JD. Use only evidence from input text.
+Rule summary: ${ruleScore.summary}
+Detected resume skills: ${extractedSkills.join(", ") || "none"}
+
+Job Description (all chunks):
+${jdContext}
+
+Resume Chunk:
+${resumeChunks[index]}`
+        }
+      ]);
+
+      const parsed = JSON.parse(raw) as {
+        matchedKeywords?: string[];
+        missingKeywords?: string[];
+        laggingAreas?: string[];
+        improvementActions?: string[];
+        resumeRewriteTips?: string[];
+      };
+
+      (parsed.matchedKeywords || []).forEach((value) => aggregated.matched.add(value));
+      (parsed.missingKeywords || []).forEach((value) => aggregated.missing.add(value));
+      (parsed.laggingAreas || []).forEach((value) => aggregated.lagging.add(value));
+      (parsed.improvementActions || []).forEach((value) => aggregated.actions.add(value));
+      (parsed.resumeRewriteTips || []).forEach((value) => aggregated.tips.add(value));
+    }
+
+    const synthesisRaw = await callGrok([
+      {
+        role: "system",
+        content:
+          "You are an ATS assistant. Return strict JSON only with keys: overview (string), laggingAreas (string[]), improvementActions (string[]), resumeRewriteTips (string[])."
+      },
+      {
+        role: "user",
+        content: `Create a concise final ATS evaluation from aggregated analysis.
+Rule score summary: ${ruleScore.summary}
+Rule matched: ${ruleScore.matchedKeywords.join(", ") || "none"}
+Rule missing: ${ruleScore.missingKeywords.join(", ") || "none"}
+AI matched: ${Array.from(aggregated.matched).join(", ") || "none"}
+AI missing: ${Array.from(aggregated.missing).join(", ") || "none"}
+AI lagging: ${Array.from(aggregated.lagging).join(", ") || "none"}
+AI actions: ${Array.from(aggregated.actions).join(" | ") || "none"}
+AI tips: ${Array.from(aggregated.tips).join(" | ") || "none"}`
+      }
+    ]);
+
+    const synthesis = JSON.parse(synthesisRaw) as {
+      overview?: string;
+      laggingAreas?: string[];
+      improvementActions?: string[];
+      resumeRewriteTips?: string[];
+    };
+
+    return {
+      aiOverview: synthesis.overview || ruleScore.summary,
+      matchedKeywords: Array.from(aggregated.matched).slice(0, 15),
+      missingKeywords: Array.from(aggregated.missing).slice(0, 15),
+      laggingAreas: (synthesis.laggingAreas || Array.from(aggregated.lagging)).slice(0, 10),
+      improvementActions: (synthesis.improvementActions || Array.from(aggregated.actions)).slice(0, 10),
+      resumeRewriteTips: (synthesis.resumeRewriteTips || Array.from(aggregated.tips)).slice(0, 10),
+      aiUsed: true,
+      aiSource: "grok"
+    };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "AI analysis failed.";
+    return fallback(reason);
+  }
 }
 
 async function extractResumeText(file: Express.Multer.File): Promise<string> {
@@ -248,7 +474,7 @@ app.post(
   roleGuard(["owner", "admin", "recruiter"]),
   upload.single("resume"),
   async (req: AuthedRequest, res) => {
-    if (!req.file) return res.status(400).json({ message: "Resume PDF is required." });
+    if (!req.file) return res.status(400).json({ message: "Resume file is required." });
     const jobId = String(req.body?.jobId || "");
     if (!jobId) return res.status(400).json({ message: "Job is required." });
 
@@ -260,6 +486,7 @@ app.post(
     const email = extractEmail(resumeText);
     const phone = extractPhone(resumeText);
     const ats = computeAtsScore(resumeText, String(job.jdText || ""));
+    const ai = await generateGrokOverview(resumeText, String(job.jdText || ""), ats);
     const resumeSummary = resumeText.trim().slice(0, 400);
 
     const candidate = await CandidateModel.create({
@@ -273,6 +500,15 @@ app.post(
       atsScore: ats.total,
       scoreBreakdown: ats.breakdown,
       scoreSummary: ats.summary,
+      aiOverview: ai.aiOverview,
+      matchedKeywords: ai.matchedKeywords,
+      missingKeywords: ai.missingKeywords,
+      laggingAreas: ai.laggingAreas,
+      improvementActions: ai.improvementActions,
+      resumeRewriteTips: ai.resumeRewriteTips,
+      aiUsed: ai.aiUsed,
+      aiSource: ai.aiSource,
+      aiFailureReason: ai.aiFailureReason,
       resumeSummary
     });
 
@@ -294,6 +530,23 @@ app.patch(
     ).lean();
     if (!candidate) return res.status(404).json({ message: "Candidate not found" });
     return res.json(candidate);
+  }
+);
+
+app.delete(
+  "/candidates/:id",
+  authMiddleware,
+  roleGuard(["owner", "admin", "recruiter"]),
+  async (req: AuthedRequest, res) => {
+    const candidateId = req.params.id;
+    const deletedCandidate = await CandidateModel.findOneAndDelete({
+      _id: candidateId,
+      tenantId: req.user!.tenantId
+    }).lean();
+    if (!deletedCandidate) return res.status(404).json({ message: "Candidate not found" });
+
+    await InterviewModel.deleteMany({ tenantId: req.user!.tenantId, candidateId });
+    return res.status(204).send();
   }
 );
 

@@ -13,6 +13,12 @@ type CandidateDetail = {
   atsScore?: number;
   skills?: string[];
   scoreSummary?: string;
+  aiOverview?: string;
+  matchedKeywords?: string[];
+  missingKeywords?: string[];
+  laggingAreas?: string[];
+  improvementActions?: string[];
+  resumeRewriteTips?: string[];
   scoreBreakdown?: { required: number; optional: number; experience: number; structure: number };
   resumeSummary?: string;
 };
@@ -80,7 +86,7 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
 
           <hr />
           <h2 className="h5">ATS Explanation</h2>
-          <p className="text-secondary">{candidate.scoreSummary || "No AI/rule explanation available yet."}</p>
+          <p className="text-secondary">{candidate.aiOverview || candidate.scoreSummary || "No explanation available yet."}</p>
 
           <div className="row g-3">
             <div className="col-6 col-lg-3">
@@ -124,6 +130,75 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
 
           <h3 className="h6 mt-4">Resume Summary</h3>
           <p className="text-secondary mb-0">{candidate.resumeSummary || "No summary found."}</p>
+
+          <div className="row g-3 mt-1">
+            <div className="col-12 col-lg-6">
+              <h3 className="h6 mt-3">What Matched</h3>
+              <div className="d-flex flex-wrap gap-2">
+                {candidate.matchedKeywords?.length ? (
+                  candidate.matchedKeywords.map((item) => (
+                    <span key={item} className="badge text-bg-success-subtle border">
+                      {item}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-secondary">No strong matches detected.</span>
+                )}
+              </div>
+            </div>
+            <div className="col-12 col-lg-6">
+              <h3 className="h6 mt-3">What Did Not Match</h3>
+              <div className="d-flex flex-wrap gap-2">
+                {candidate.missingKeywords?.length ? (
+                  candidate.missingKeywords.map((item) => (
+                    <span key={item} className="badge text-bg-danger-subtle border">
+                      {item}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-secondary">No major requirement gaps found.</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="row g-3 mt-1">
+            <div className="col-12 col-lg-6">
+              <h3 className="h6 mt-3">Where Resume Is Lagging</h3>
+              {candidate.laggingAreas?.length ? (
+                <ul className="mb-0 text-secondary">
+                  {candidate.laggingAreas.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-secondary mb-0">No major lagging areas identified.</p>
+              )}
+            </div>
+            <div className="col-12 col-lg-6">
+              <h3 className="h6 mt-3">How to Improve</h3>
+              {candidate.improvementActions?.length ? (
+                <ul className="mb-0 text-secondary">
+                  {candidate.improvementActions.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-secondary mb-0">No specific recommendations available.</p>
+              )}
+            </div>
+          </div>
+
+          <h3 className="h6 mt-4">Resume Rewrite Tips</h3>
+          {candidate.resumeRewriteTips?.length ? (
+            <ul className="mb-0 text-secondary">
+              {candidate.resumeRewriteTips.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-secondary mb-0">No rewrite tips available.</p>
+          )}
         </div>
       </div>
     </main>
